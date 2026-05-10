@@ -1,0 +1,379 @@
+너는 숙련된 Python/Streamlit 개발자야.
+
+Replit에서 바로 실행 가능한 “캡쳐 이미지 기반 원본 문서 찾기” 웹앱을 완성해줘.
+설명용 목업이 아니라, 실제로 파일을 업로드하고 검색이 작동하는 완성형 앱이어야 한다.
+
+앱 이름:
+캡쳐 이미지 원본 파일 찾기
+
+핵심 목표:
+사용자가 캡쳐 이미지 1장을 업로드하고, 원본 후보 파일 여러 개를 업로드하면,
+캡쳐 이미지가 어느 원본 파일의 어느 페이지 또는 어느 이미지 안에 포함되어 있는지 찾아준다.
+
+중요한 점:
+단순히 전체 이미지끼리만 비교하면 안 된다.
+캡쳐 이미지는 PDF나 Word 문서 페이지의 일부를 잘라낸 이미지일 가능성이 크다.
+따라서 원본 파일을 페이지 이미지로 렌더링한 뒤,
+캡쳐 이미지가 그 페이지 안에 부분적으로 포함되어 있는지 찾아야 한다.
+
+지원 파일 형식:
+1. 기준 캡쳐 이미지
+   - PNG
+   - JPG
+   - JPEG
+   - WEBP
+
+2. 원본 후보 파일
+   - PDF
+   - DOCX
+   - DOC
+   - PPTX
+   - PPT
+   - PNG
+   - JPG
+   - JPEG
+   - WEBP
+
+기술 스택:
+- Python
+- Streamlit
+- OpenCV
+- Pillow
+- NumPy
+- PyMuPDF
+- imagehash
+- LibreOffice headless 변환
+- tempfile
+- zipfile
+- pathlib
+
+Replit 파일 구조:
+다음 파일들을 생성해줘.
+
+- app.py
+- requirements.txt
+- README.md
+- .replit
+- replit.nix
+
+실행 명령:
+streamlit run app.py
+
+.replit 내용:
+run = "streamlit run app.py --server.address 0.0.0.0 --server.port 3000"
+
+replit.nix 내용:
+LibreOffice가 반드시 포함되어야 한다.
+DOC, DOCX, PPT, PPTX 파일을 PDF로 변환하기 위해 libreoffice headless를 사용해야 한다.
+가능하면 다음과 비슷하게 구성해줘.
+
+{ pkgs }: {
+  deps = [
+    pkgs.python311
+    pkgs.libreoffice
+  ];
+}
+
+requirements.txt에는 최소한 다음 패키지를 포함해줘.
+- streamlit
+- pillow
+- numpy
+- opencv-python-headless
+- pymupdf
+- imagehash
+
+화면 구성:
+Streamlit으로 한국어 UI를 만들어줘.
+
+상단:
+- 제목: “캡쳐 이미지 원본 파일 찾기”
+- 설명:
+  “캡쳐 이미지를 업로드한 뒤, 원본 후보 파일을 여러 개 업로드하면 가장 유사한 원본 파일과 페이지를 찾아줍니다.”
+
+입력 영역:
+1. “1단계: 찾고 싶은 캡쳐 이미지 업로드”
+   - 단일 파일 업로드
+   - png, jpg, jpeg, webp 허용
+   - 업로드 후 이미지 미리보기 표시
+
+2. “2단계: 원본 후보 파일 업로드”
+   - 여러 파일 업로드 가능
+   - pdf, docx, doc, pptx, ppt, png, jpg, jpeg, webp 허용
+   - 업로드된 파일 목록 표시
+   - 각 파일 크기 표시
+
+검색 옵션:
+- “상위 결과 개수” 슬라이더: 기본 10, 최소 3, 최대 30
+- “PDF/문서 렌더링 해상도” 선택:
+  - 보통: zoom 2.0
+  - 고해상도: zoom 3.0
+- “검색 시작” 버튼
+
+결과 영역:
+검색 버튼을 누르면 다음을 표시해줘.
+
+각 결과 카드에는 다음 정보를 표시한다.
+- 순위
+- 원본 파일명
+- 파일 형식
+- 페이지 번호 또는 이미지 번호
+- 유사도 점수, 0~100점
+- 판정: 매우 유사 / 유사 / 낮은 유사도
+- 매칭 방식
+  - ORB 특징점 매칭
+  - 템플릿 매칭
+  - 전체 이미지 해시 비교
+- 원본 페이지 또는 이미지 미리보기
+- 캡쳐 이미지와 매칭된 영역이 있다면 빨간 사각형으로 표시한 미리보기
+- 페이지 번호는 PDF/DOC/DOCX/PPT/PPTX의 경우 1부터 시작
+
+실패 파일 영역:
+처리하지 못한 파일이 있으면 결과 아래에 “처리 실패 파일” 섹션을 만들고,
+파일명과 실패 이유를 표시해줘.
+단, 특정 파일 하나가 실패해도 전체 앱은 멈추면 안 된다.
+
+전체 처리 흐름:
+1. 사용자가 기준 캡쳐 이미지를 업로드한다.
+2. 사용자가 원본 후보 파일 여러 개를 업로드한다.
+3. 검색 시작 버튼을 누른다.
+4. 기준 캡쳐 이미지를 OpenCV 이미지로 변환한다.
+5. 원본 후보 파일을 하나씩 처리한다.
+6. PDF는 각 페이지를 이미지로 렌더링한다.
+7. DOC, DOCX, PPT, PPTX는 LibreOffice headless로 PDF로 변환한 뒤, 변환된 PDF의 각 페이지를 이미지로 렌더링한다.
+8. 일반 이미지 파일은 그대로 비교 대상 이미지로 사용한다.
+9. 각 비교 대상 이미지에서 기준 캡쳐 이미지와의 유사도를 계산한다.
+10. 결과를 유사도 높은 순서로 정렬한다.
+11. 상위 결과만 표시한다.
+
+중요한 비교 알고리즘:
+정확도를 높이기 위해 최소 3가지 방식을 함께 사용해줘.
+
+A. ORB 특징점 매칭
+- 캡쳐 이미지와 원본 페이지 이미지에서 ORB keypoint와 descriptor를 추출한다.
+- BFMatcher 또는 FLANN 기반 매칭을 사용한다.
+- 좋은 매칭점 개수를 계산한다.
+- 충분한 매칭점이 있으면 homography를 계산해서 캡쳐 이미지가 원본 페이지의 어느 영역에 있는지 추정한다.
+- homography가 성공하면 해당 영역의 bounding box를 구한다.
+- ORB 점수는 좋은 매칭점 개수, inlier 비율, homography 성공 여부를 반영해서 0~100점으로 만든다.
+- 캡쳐 이미지가 문서 페이지의 일부인 경우 이 방식이 가장 중요하다.
+
+B. 템플릿 매칭
+- 기준 캡쳐 이미지가 원본 페이지보다 작을 때 사용한다.
+- cv2.matchTemplate을 사용한다.
+- 단, 캡쳐 이미지와 원본 페이지의 크기 차이가 있을 수 있으므로 scale search를 해야 한다.
+- 기준 이미지를 여러 스케일로 조정해서 비교한다.
+- 권장 scale 범위:
+  - 0.5
+  - 0.75
+  - 1.0
+  - 1.25
+  - 1.5
+  - 2.0
+- 각 scale에서 matchTemplate 결과의 최대값을 구한다.
+- 가장 높은 점수와 위치를 저장한다.
+- 템플릿 매칭 점수는 0~100점으로 변환한다.
+- matching 위치가 있으면 bounding box를 저장한다.
+
+C. 전체 이미지 pHash 비교
+- 원본 이미지 파일이 캡쳐 이미지와 거의 같은 이미지일 때 사용한다.
+- imagehash.phash를 사용한다.
+- hash distance를 0~100점으로 변환한다.
+- 이 방식은 보조 점수로 사용한다.
+
+최종 점수 계산:
+각 비교 대상 이미지마다 다음 점수를 구한다.
+
+- orb_score
+- template_score
+- phash_score
+
+final_score는 다음 규칙으로 계산한다.
+
+final_score = max(
+  orb_score,
+  template_score,
+  phash_score
+)
+
+단, ORB homography가 성공하고 inlier가 충분하면 ORB 점수에 약간의 보너스를 줘도 된다.
+점수는 반드시 0~100 범위로 제한한다.
+
+판정 기준:
+- 85점 이상: 매우 유사
+- 65점 이상 85점 미만: 유사
+- 65점 미만: 낮은 유사도
+
+결과 필터링:
+- 기본적으로 40점 미만의 결과는 표시하지 않는다.
+- 단, 결과가 하나도 없으면 “유사한 파일을 찾지 못했습니다”라고 표시하고,
+  가장 높은 점수를 받은 후보 3개를 참고용으로 보여줘도 된다.
+
+PDF 렌더링 세부사항:
+PyMuPDF를 사용한다.
+함수 예시:
+render_pdf_pages(pdf_path, zoom)
+- fitz.open(pdf_path)
+- 각 page마다 page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+- PIL Image 또는 OpenCV 이미지로 변환
+- 페이지 번호는 1부터 저장
+- 메모리 사용량이 너무 커지지 않도록 페이지를 하나씩 처리한다.
+
+Office 문서 처리 세부사항:
+DOC, DOCX, PPT, PPTX는 LibreOffice headless로 PDF 변환한다.
+함수 예시:
+convert_office_to_pdf(input_path, output_dir)
+- subprocess.run 사용
+- 명령:
+  libreoffice --headless --convert-to pdf --outdir output_dir input_path
+- timeout 설정
+- 변환된 PDF 경로를 찾아서 반환
+- 변환 실패 시 예외 처리
+- LibreOffice가 없거나 변환에 실패하면 해당 파일을 실패 목록에 추가하고 앱은 계속 진행한다.
+
+이미지 전처리:
+비교 정확도를 위해 다음 전처리 함수를 만들어줘.
+
+load_image_to_cv2(file_or_path)
+- PIL로 이미지 열기
+- RGB 변환
+- NumPy array 변환
+- OpenCV BGR 또는 RGB 일관성 유지
+
+preprocess_for_matching(image)
+- grayscale 변환
+- 너무 큰 이미지는 최대 가로 또는 세로 1600px 정도로 리사이즈
+- 대비 개선이 필요하면 CLAHE 적용 가능
+- ORB와 template matching에서 같은 기준으로 사용
+
+크기 문제 처리:
+- 캡쳐 이미지가 너무 크고 원본 페이지가 작으면 비교 전에 적절히 리사이즈한다.
+- 원본 페이지와 캡쳐 이미지 각각의 비율을 유지한다.
+- 템플릿 매칭은 template이 source보다 클 경우 해당 scale은 건너뛴다.
+
+Bounding box 표시:
+- ORB homography 또는 template matching으로 위치를 찾으면
+  원본 페이지 미리보기 이미지 위에 빨간 사각형을 그린다.
+- cv2.rectangle 사용
+- Streamlit에 표시할 때는 RGB 이미지로 변환해서 보여준다.
+
+Streamlit UX:
+- 검색 중에는 st.spinner 또는 st.progress를 사용한다.
+- 파일별 진행 상태를 보여준다.
+- 처리한 파일 수와 페이지 수를 표시한다.
+- 업로드 누락 시 다음 경고를 띄운다.
+  - 캡쳐 이미지가 없을 때: “먼저 캡쳐 이미지를 업로드해주세요.”
+  - 원본 후보 파일이 없을 때: “원본 후보 파일을 하나 이상 업로드해주세요.”
+- 예외가 발생해도 전체 앱이 중단되지 않게 try/except를 적절히 사용한다.
+
+성능 요구사항:
+- 페이지를 모두 메모리에 저장하지 말고, 가능한 한 하나씩 렌더링하고 바로 비교한다.
+- 결과에는 상위 후보만 저장한다.
+- 미리보기 이미지는 너무 크지 않게 리사이즈해서 저장한다.
+- 대용량 파일 처리 중에도 앱이 최대한 멈추지 않도록 한다.
+
+코드 품질:
+- app.py 안에 함수들을 명확히 분리해줘.
+- 최소한 다음 함수들을 만들어줘.
+
+필수 함수:
+1. save_uploaded_file(uploaded_file, temp_dir)
+2. load_capture_image(uploaded_file)
+3. cv2_to_pil(image)
+4. pil_to_cv2(image)
+5. resize_max(image, max_size=1600)
+6. preprocess_gray(image)
+7. compute_phash_score(capture_pil, candidate_pil)
+8. compute_template_match_score(capture_cv, candidate_cv)
+9. compute_orb_match_score(capture_cv, candidate_cv)
+10. draw_bounding_box(image, bbox)
+11. render_pdf_pages(pdf_path, zoom)
+12. convert_office_to_pdf(input_path, output_dir)
+13. process_pdf_file(file_path, original_name, capture_data, zoom)
+14. process_office_file(file_path, original_name, capture_data, zoom)
+15. process_image_file(file_path, original_name, capture_data)
+16. compare_candidate_image(capture_data, candidate_image, metadata)
+17. classify_score(score)
+18. main()
+
+데이터 구조:
+결과는 dict 형태로 관리한다.
+
+result = {
+  "file_name": original_name,
+  "file_type": extension,
+  "page_number": page_number_or_none,
+  "image_number": image_number_or_none,
+  "score": final_score,
+  "orb_score": orb_score,
+  "template_score": template_score,
+  "phash_score": phash_score,
+  "method": best_method,
+  "judgement": judgement,
+  "preview_image": preview_image,
+  "boxed_preview_image": boxed_preview_image,
+  "bbox": bbox
+}
+
+bbox 형식:
+(x1, y1, x2, y2)
+
+점수 계산 예시:
+- template matching max_val은 일반적으로 0~1 사이이므로 score = max_val * 100
+- phash는 hash distance가 낮을수록 유사하므로, 64bit hash 기준:
+  score = max(0, 100 - distance * 100 / 32)
+- ORB는 다음 요소를 조합:
+  - good_matches 수
+  - inlier 비율
+  - homography 성공 여부
+  예시:
+  if good_matches < 8:
+      orb_score = min(40, good_matches * 5)
+  else:
+      orb_score = min(100, 40 + good_matches * 2 + inlier_ratio * 40)
+  homography 성공 시 score를 더 신뢰하되 100을 넘지 않게 한다.
+
+테스트 요구사항:
+앱을 완성한 후, 최소한 다음 상황을 고려해서 코드가 깨지지 않도록 해줘.
+
+1. 캡쳐 이미지와 동일한 이미지 파일을 원본 후보에 넣은 경우 높은 점수로 찾아야 한다.
+2. 캡쳐 이미지가 PDF 한 페이지의 일부인 경우 해당 PDF와 페이지 번호를 찾아야 한다.
+3. DOCX 파일은 LibreOffice로 PDF 변환 후 페이지 단위로 검색해야 한다.
+4. PPTX 파일도 LibreOffice로 PDF 변환 후 슬라이드 단위로 검색해야 한다.
+5. 깨진 파일이나 지원하지 않는 파일이 섞여 있어도 앱이 멈추지 않아야 한다.
+6. 업로드 파일이 없을 때 친절한 경고가 떠야 한다.
+
+README.md 내용:
+다음 내용을 한국어로 작성해줘.
+
+- 앱 소개
+- 주요 기능
+- 지원 파일 형식
+- 사용 방법
+- Replit 실행 방법
+- 검색 알고리즘 설명
+  - ORB 특징점 매칭
+  - 템플릿 매칭
+  - pHash 비교
+- 한계점
+  - 캡쳐 이미지가 너무 작거나 흐리면 정확도가 낮아질 수 있음
+  - 회전, 심한 왜곡, 색상 변경, 워터마크가 있으면 정확도가 낮아질 수 있음
+  - Word/PPT 변환은 LibreOffice 변환 품질에 영향을 받을 수 있음
+  - 스캔 PDF나 이미지 PDF는 렌더링 품질에 따라 결과가 달라질 수 있음
+
+중요한 구현 원칙:
+- “나중에 구현” 같은 미완성 코드를 넣지 마.
+- pass, TODO, mock data를 넣지 마.
+- 실제 업로드 파일을 처리해야 한다.
+- 모든 함수는 실제로 동작해야 한다.
+- 에러 처리를 반드시 넣어라.
+- Replit에서 실행했을 때 바로 Streamlit 앱이 열려야 한다.
+- UI는 한국어로 만든다.
+- 사용자가 코드를 수정하지 않아도 동작해야 한다.
+
+최종적으로 다음을 확인해줘.
+1. app.py가 문법 오류 없이 실행되는지
+2. requirements.txt가 완성되어 있는지
+3. .replit 실행 명령이 맞는지
+4. replit.nix에 libreoffice가 포함되어 있는지
+5. Streamlit UI가 한국어로 표시되는지
+6. 파일 업로드 후 검색 결과가 실제로 표시되는지
