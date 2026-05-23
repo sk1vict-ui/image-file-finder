@@ -294,8 +294,23 @@ def render_pdf_pages(pdf_path: str, zoom: float):
         doc.close()
 
 
+def find_libreoffice() -> Optional[str]:
+    """LibreOffice 실행 경로 찾기. 없으면 None."""
+    candidate = shutil.which("libreoffice") or shutil.which("soffice")
+    if candidate:
+        return candidate
+    # Windows 기본 설치 경로
+    for guess in [
+        r"C:\Program Files\LibreOffice\program\soffice.exe",
+        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+    ]:
+        if os.path.exists(guess):
+            return guess
+    return None
+
+
 def convert_office_to_pdf(input_path: str, output_dir: str, timeout: int = 180) -> str:
-    soffice = shutil.which("libreoffice") or shutil.which("soffice")
+    soffice = find_libreoffice()
     if not soffice:
         raise RuntimeError("LibreOffice가 설치되어 있지 않습니다.")
 
@@ -432,6 +447,34 @@ def process_pdf_file(
     return results
 
 
+def extract_embedded_images_from_ooxml(file_path: str) -> List[Tuple[str, Image.Image]]:
+    """
+    .pptx/.docx 파일은 ZIP 컨테이너이며 내부에 ppt/media/ 또는 word/media/
+    경로로 이미지를 포함합니다. 외부 변환 도구(LibreOffice) 없이 이 이미지들을
+    추출합니다. 반환: [(media_name, PIL.Image), ...]
+    """
+    results: List[Tuple[str, Image.Image]] = []
+    image_exts_in_ooxml = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp"}
+    try:
+        with zipfile.ZipFile(file_path) as zf:
+            media_entries = [
+                n for n in zf.namelist()
+                if ("/media/" in n.lower())
+                and Path(n).suffix.lower() in image_exts_in_ooxml
+            ]
+            media_entries.sort()
+            for name in media_entries:
+                try:
+                    data = zf.read(name)
+                    img = Image.open(io.BytesIO(data)).convert("RGB")
+                    results.append((Path(name).name, img))
+                except Exception:
+                    continue
+    except (zipfile.BadZipFile, KeyError):
+        pass
+    return results
+
+
 def process_office_file(
     file_path: str,
     original_name: str,
@@ -441,18 +484,59 @@ def process_office_file(
 ) -> List[Dict[str, Any]]:
     ext = Path(original_name).suffix.lower().lstrip(".")
     label = ext.upper() if ext else "OFFICE"
-    with tempfile.TemporaryDirectory() as out_dir:
+    soffice_available = find_libreoffice() is not None
+    is_ooxml = ext in {"docx", "pptx"}  # ZIP 기반 신규 포맷
+
+    # 1순위: LibreOffice가 있으면 전체 페이지를 PDF로 변환해서 처리 (가장 정확)
+    if soffice_available:
+        try:
+            with tempfile.TemporaryDirectory() as out_dir:
+                if progress_text is not None:
+                    progress_text.write(f"`{original_name}` — PDF 변환 중...")
+                pdf_path = convert_office_to_pdf(file_path, out_dir)
+                return process_pdf_file(
+                    pdf_path, original_name, capture_data, zoom,
+                    file_type_label=label, progress_text=progress_text,
+                )
+        except Exception as e:
+            if not is_ooxml:
+                raise  # .ppt/.doc은 폴백 불가
+            # OOXML이면 폴백으로 진행
+            if progress_text is not None:
+                progress_text.write(
+                    f"`{original_name}` — LibreOffice 변환 실패, 내장 이미지 추출 모드로 전환..."
+                )
+
+    # 2순위 (포터블/폴백): OOXML이면 내장 이미지 추출 후 각 이미지와 비교
+    if is_ooxml:
         if progress_text is not None:
-            progress_text.write(f"`{original_name}` — PDF 변환 중...")
-        pdf_path = convert_office_to_pdf(file_path, out_dir)
-        return process_pdf_file(
-            pdf_path,
-            original_name,
-            capture_data,
-            zoom,
-            file_type_label=label,
-            progress_text=progress_text,
-        )
+            progress_text.write(f"`{original_name}` — 내장 이미지 추출 중...")
+        embedded = extract_embedded_images_from_ooxml(file_path)
+        if not embedded:
+            return []
+        results: List[Dict[str, Any]] = []
+        for idx, (media_name, img) in enumerate(embedded, start=1):
+            if progress_text is not None:
+                progress_text.write(
+                    f"`{original_name}` — 내장 이미지 {idx}/{len(embedded)} 비교 중..."
+                )
+            try:
+                metadata = {
+                    "file_name": original_name,
+                    "file_type": f"{label} (내장 이미지)",
+                    "page_number": None,
+                    "image_number": idx,
+                }
+                results.append(compare_candidate_image(capture_data, img, metadata))
+            except Exception:
+                continue
+        return results
+
+    # 3순위: .ppt/.doc 레거시 포맷인데 LibreOffice 없음
+    raise RuntimeError(
+        f"{label} 파일을 처리하려면 LibreOffice가 필요합니다. "
+        ".pptx / .docx 형식으로 저장 후 다시 시도해주세요."
+    )
 
 
 def process_image_file(
@@ -523,6 +607,21 @@ def main() -> None:
         "캡쳐 이미지를 업로드한 뒤, 원본 후보 파일을 여러 개 업로드하면 "
         "가장 유사한 원본 파일과 페이지를 찾아줍니다."
     )
+
+    # 환경 상태 배너 (포터블 모드 안내)
+    soffice_path = find_libreoffice()
+    if soffice_path:
+        st.caption(
+            f"🟢 **전체 모드** — LibreOffice 감지됨 (`{soffice_path}`). "
+            "PDF / 이미지 / PPTX / DOCX / PPT / DOC 모두 처리 가능."
+        )
+    else:
+        st.caption(
+            "🟡 **포터블 모드** — LibreOffice 없이 작동 중. "
+            "**PDF / 이미지 / PPTX / DOCX** 처리 가능. "
+            "_.ppt / .doc 레거시 파일은 처리 불가 — .pptx / .docx로 저장 후 재시도하거나 "
+            "LibreOffice를 추가 설치해주세요._"
+        )
 
     st.divider()
     st.header("1단계: 찾고 싶은 캡쳐 이미지 업로드")
