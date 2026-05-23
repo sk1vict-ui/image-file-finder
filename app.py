@@ -552,8 +552,13 @@ def main() -> None:
         # name -> {"name": str, "bytes": bytes, "size": int, "relpath": str}
         st.session_state.uploaded_candidates = {}
 
-    tab_files, tab_folder, tab_zip = st.tabs(
-        ["📄 파일로 추가", "📁 폴더 통째로 추가", "🗜️ ZIP으로 추가 (가장 안정적)"]
+    tab_files, tab_folder, tab_zip, tab_path = st.tabs(
+        [
+            "📄 파일로 추가",
+            "📁 폴더 통째로 추가",
+            "🗜️ ZIP으로 추가",
+            "📂 경로 지정 (로컬 실행 시)",
+        ]
     )
 
     with tab_files:
@@ -717,6 +722,143 @@ def main() -> None:
                 st.success(msg)
             for err in errors:
                 st.error(err)
+
+    with tab_path:
+        is_replit = bool(os.environ.get("REPL_ID") or os.environ.get("REPLIT_DEV_DOMAIN"))
+        if is_replit:
+            st.warning(
+                "⚠️ 현재 앱이 **Replit 서버**에서 실행 중이에요. 이 탭은 "
+                "Replit 서버 내부 경로만 볼 수 있고, 본인 PC 폴더는 보이지 않습니다. "
+                "본인 PC 파일을 검색하려면 위의 **파일/폴더/ZIP** 탭을 이용하거나, "
+                "이 앱을 본인 PC에서 `streamlit run app.py`로 직접 실행해주세요."
+            )
+        else:
+            st.caption(
+                "내 PC의 폴더 경로를 지정해 파일을 스캔합니다. "
+                "(이 앱을 본인 PC에서 직접 실행할 때 사용)"
+            )
+
+        default_root = str(Path.home() if Path.home().exists() else Path.cwd())
+        if "browser_path" not in st.session_state:
+            st.session_state.browser_path = default_root
+
+        current_path = Path(st.session_state.browser_path).expanduser()
+        if not current_path.exists() or not current_path.is_dir():
+            current_path = Path(default_root)
+            st.session_state.browser_path = str(current_path)
+
+        nav_cols = st.columns([1, 5, 1])
+        with nav_cols[0]:
+            if st.button(
+                "⬆️ 상위", use_container_width=True,
+                disabled=str(current_path) == str(current_path.parent),
+                key="path_up_btn",
+            ):
+                st.session_state.browser_path = str(current_path.parent)
+                st.rerun()
+        with nav_cols[1]:
+            typed_path = st.text_input(
+                "현재 위치", value=str(current_path), key="browser_path_input",
+                label_visibility="collapsed",
+            )
+        with nav_cols[2]:
+            if st.button("이동", use_container_width=True, key="path_goto_btn"):
+                target_path = Path(typed_path).expanduser()
+                if target_path.exists() and target_path.is_dir():
+                    st.session_state.browser_path = str(target_path)
+                    st.rerun()
+                else:
+                    st.warning("존재하지 않는 폴더입니다.")
+
+        try:
+            subdirs = sorted(
+                [p for p in current_path.iterdir() if p.is_dir() and not p.name.startswith(".")],
+                key=lambda p: p.name.lower(),
+            )
+        except PermissionError:
+            subdirs = []
+            st.warning("이 폴더에 접근 권한이 없습니다.")
+        except Exception as e:
+            subdirs = []
+            st.warning(f"폴더를 읽을 수 없습니다: {e}")
+
+        enter_cols = st.columns([4, 1])
+        with enter_cols[0]:
+            subdir_names = ["(하위 폴더 선택해서 들어가기)"] + [p.name for p in subdirs]
+            chosen = st.selectbox(
+                "하위 폴더", subdir_names, index=0, key="subdir_select",
+                label_visibility="collapsed",
+            )
+        with enter_cols[1]:
+            if st.button(
+                "들어가기", use_container_width=True,
+                disabled=(chosen == "(하위 폴더 선택해서 들어가기)"),
+                key="path_enter_btn",
+            ):
+                target = current_path / chosen
+                if target.is_dir():
+                    st.session_state.browser_path = str(target)
+                    st.rerun()
+
+        scan_opt_cols = st.columns([1, 1, 2])
+        with scan_opt_cols[0]:
+            recursive = st.checkbox("하위 폴더 포함", value=True, key="path_recursive")
+        with scan_opt_cols[1]:
+            max_scan_files = st.number_input(
+                "최대 스캔 수", min_value=10, max_value=10000, value=500, step=50,
+                key="path_max_scan",
+            )
+
+        if st.button(
+            "🔍 이 폴더에서 지원 파일을 모두 추가", type="primary",
+            use_container_width=True, key="path_scan_btn",
+        ):
+            scanned = []
+            invalid = None
+            try:
+                iterator = current_path.rglob("*") if recursive else current_path.glob("*")
+                for child in iterator:
+                    if not child.is_file():
+                        continue
+                    if child.suffix.lower() in SUPPORTED_CANDIDATE_EXTS:
+                        scanned.append(child)
+                    if len(scanned) >= max_scan_files:
+                        break
+            except PermissionError:
+                invalid = "접근 권한 없음"
+            except Exception as e:
+                invalid = f"스캔 실패: {e}"
+
+            if invalid:
+                st.error(invalid)
+            elif not scanned:
+                st.info("이 폴더에서 지원 파일을 찾지 못했습니다.")
+            else:
+                added = 0
+                read_errors = []
+                with st.spinner(f"{len(scanned)}개 파일 읽는 중..."):
+                    for fp in scanned:
+                        key = f"path::{fp}"
+                        if key in st.session_state.uploaded_candidates:
+                            continue
+                        try:
+                            data = fp.read_bytes()
+                        except Exception as e:
+                            read_errors.append(f"{fp.name}: {e}")
+                            continue
+                        st.session_state.uploaded_candidates[key] = {
+                            "name": fp.name,
+                            "bytes": data,
+                            "size": len(data),
+                            "relpath": str(fp.relative_to(current_path)) if fp.is_relative_to(current_path) else fp.name,
+                        }
+                        added += 1
+                msg = f"{added}개 파일이 추가되었습니다."
+                if len(scanned) >= max_scan_files:
+                    msg += f" (최대 스캔 수 {max_scan_files}개 도달 — 더 많으면 위에서 값을 늘리세요)"
+                st.success(msg)
+                for e in read_errors:
+                    st.error(e)
 
     # 선택된 파일 리스트
     st.markdown(f"**선택된 검색 대상 파일: {len(st.session_state.uploaded_candidates)}개**")
