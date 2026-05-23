@@ -539,18 +539,91 @@ def main() -> None:
             st.error(f"캡쳐 이미지를 열 수 없습니다: {e}")
 
     st.divider()
-    st.header("2단계: 원본 후보 폴더 경로 입력")
+    st.header("2단계: 원본 후보 폴더 선택")
     st.caption(
-        "검색 대상이 될 폴더 경로를 한 줄에 하나씩 입력하세요. "
-        "여러 폴더를 한꺼번에 입력하면 모든 폴더에서 일괄 검색됩니다."
+        "아래 폴더 탐색기에서 폴더를 이동하며 검색 대상 폴더를 추가하세요. "
+        "여러 폴더를 추가하면 모든 폴더에서 일괄 검색됩니다."
     )
-    paths_text = st.text_area(
-        "폴더 경로 (한 줄에 하나)",
-        value="",
-        height=120,
-        placeholder="/home/runner/workspace/samples\n/data/documents",
-        key="folder_paths",
-    )
+
+    default_root = str(Path.home() if Path.home().exists() else Path("/home/runner/workspace"))
+    if "browser_path" not in st.session_state:
+        st.session_state.browser_path = default_root
+    if "selected_folders" not in st.session_state:
+        st.session_state.selected_folders = []
+
+    # 현재 폴더 표시 + 이동
+    current_path = Path(st.session_state.browser_path).expanduser()
+    if not current_path.exists() or not current_path.is_dir():
+        current_path = Path(default_root)
+        st.session_state.browser_path = str(current_path)
+
+    nav_cols = st.columns([1, 5, 1])
+    with nav_cols[0]:
+        if st.button("상위 폴더", use_container_width=True, disabled=str(current_path) == str(current_path.parent)):
+            st.session_state.browser_path = str(current_path.parent)
+            st.rerun()
+    with nav_cols[1]:
+        new_path = st.text_input(
+            "현재 위치", value=str(current_path), key="browser_path_input",
+            label_visibility="collapsed",
+        )
+    with nav_cols[2]:
+        if st.button("이동", use_container_width=True):
+            target_path = Path(new_path).expanduser()
+            if target_path.exists() and target_path.is_dir():
+                st.session_state.browser_path = str(target_path)
+                st.rerun()
+            else:
+                st.warning("존재하지 않는 폴더입니다.")
+
+    # 하위 폴더 목록
+    try:
+        subdirs = sorted(
+            [p for p in current_path.iterdir() if p.is_dir() and not p.name.startswith(".")],
+            key=lambda p: p.name.lower(),
+        )
+    except PermissionError:
+        subdirs = []
+        st.warning("이 폴더에 접근 권한이 없습니다.")
+    except Exception as e:
+        subdirs = []
+        st.warning(f"폴더를 읽을 수 없습니다: {e}")
+
+    enter_cols = st.columns([3, 1, 1])
+    with enter_cols[0]:
+        subdir_names = ["(하위 폴더 선택)"] + [p.name for p in subdirs]
+        chosen = st.selectbox(
+            "하위 폴더", subdir_names, index=0, key="subdir_select",
+            label_visibility="collapsed",
+        )
+    with enter_cols[1]:
+        if st.button("들어가기", use_container_width=True, disabled=(chosen == "(하위 폴더 선택)")):
+            target = current_path / chosen
+            if target.is_dir():
+                st.session_state.browser_path = str(target)
+                st.rerun()
+    with enter_cols[2]:
+        if st.button("이 폴더 추가", type="primary", use_container_width=True):
+            cp = str(current_path)
+            if cp not in st.session_state.selected_folders:
+                st.session_state.selected_folders.append(cp)
+                st.rerun()
+
+    # 선택된 폴더 리스트
+    st.markdown("**선택된 검색 대상 폴더**")
+    if not st.session_state.selected_folders:
+        st.info("아직 선택된 폴더가 없습니다. 위에서 폴더를 탐색하고 '이 폴더 추가' 버튼을 눌러주세요.")
+    else:
+        for i, folder in enumerate(list(st.session_state.selected_folders)):
+            row = st.columns([8, 1])
+            row[0].markdown(f"- `{folder}`")
+            if row[1].button("제거", key=f"rm_folder_{i}"):
+                st.session_state.selected_folders.remove(folder)
+                st.rerun()
+        if st.button("전체 비우기"):
+            st.session_state.selected_folders = []
+            st.rerun()
+
     path_opt_cols = st.columns([1, 1, 2])
     with path_opt_cols[0]:
         recursive = st.checkbox("하위 폴더 포함", value=True)
@@ -559,7 +632,7 @@ def main() -> None:
             "최대 스캔 파일 수", min_value=10, max_value=10000, value=500, step=50,
         )
 
-    folder_paths = [p.strip() for p in paths_text.splitlines() if p.strip()]
+    folder_paths = list(st.session_state.selected_folders)
     discovered_files: List[str] = []
     invalid_paths: List[Tuple[str, str]] = []
 
@@ -569,27 +642,23 @@ def main() -> None:
             if not path_obj.exists():
                 invalid_paths.append((p, "경로가 존재하지 않습니다"))
                 continue
-            if path_obj.is_file():
-                if path_obj.suffix.lower() in SUPPORTED_CANDIDATE_EXTS:
-                    discovered_files.append(str(path_obj))
-                else:
-                    invalid_paths.append((p, f"지원하지 않는 형식: {path_obj.suffix}"))
-                continue
             if not path_obj.is_dir():
-                invalid_paths.append((p, "폴더 또는 파일이 아닙니다"))
+                invalid_paths.append((p, "폴더가 아닙니다"))
                 continue
-            iterator = path_obj.rglob("*") if recursive else path_obj.glob("*")
-            for child in iterator:
-                if not child.is_file():
-                    continue
-                if child.suffix.lower() in SUPPORTED_CANDIDATE_EXTS:
-                    discovered_files.append(str(child))
-                if len(discovered_files) >= max_scan_files:
-                    break
+            try:
+                iterator = path_obj.rglob("*") if recursive else path_obj.glob("*")
+                for child in iterator:
+                    if not child.is_file():
+                        continue
+                    if child.suffix.lower() in SUPPORTED_CANDIDATE_EXTS:
+                        discovered_files.append(str(child))
+                    if len(discovered_files) >= max_scan_files:
+                        break
+            except PermissionError:
+                invalid_paths.append((p, "접근 권한 없음"))
             if len(discovered_files) >= max_scan_files:
                 break
 
-        # 중복 제거 + 정렬
         seen = set()
         deduped = []
         for f in discovered_files:
@@ -604,9 +673,8 @@ def main() -> None:
                 f"최대 스캔 파일 수({max_scan_files})에 도달했습니다. "
                 "더 많은 파일을 검색하려면 위 값을 늘려주세요."
             )
-        if invalid_paths:
-            for p, reason in invalid_paths:
-                st.error(f"`{p}` — {reason}")
+        for p, reason in invalid_paths:
+            st.error(f"`{p}` — {reason}")
         if discovered_files:
             with st.expander("파일 목록 보기", expanded=False):
                 for f in discovered_files:
@@ -637,8 +705,8 @@ def main() -> None:
     if capture_file is None:
         st.warning("먼저 캡쳐 이미지를 업로드해주세요.")
         return
-    if not candidate_files:
-        st.warning("원본 후보 파일을 하나 이상 업로드해주세요.")
+    if not discovered_files:
+        st.warning("검색 대상이 될 폴더를 하나 이상 선택해주세요.")
         return
 
     try:
@@ -656,62 +724,60 @@ def main() -> None:
     progress_text = st.empty()
     summary = st.empty()
 
-    total_files = len(candidate_files)
+    total_files = len(discovered_files)
     processed_files = 0
     processed_pages = 0
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        for idx, uploaded in enumerate(candidate_files, start=1):
-            try:
-                saved_path = save_uploaded_file(uploaded, temp_dir)
-            except Exception as e:
-                failed.append((uploaded.name, f"파일 저장 실패: {e}"))
-                processed_files += 1
-                progress.progress(processed_files / total_files)
-                continue
+    for idx, file_path in enumerate(discovered_files, start=1):
+        file_name = Path(file_path).name
+        ext = Path(file_path).suffix.lower()
 
-            ext = Path(uploaded.name).suffix.lower()
-            if ext not in SUPPORTED_CANDIDATE_EXTS:
-                failed.append((uploaded.name, f"지원하지 않는 형식: {ext}"))
-                processed_files += 1
-                progress.progress(processed_files / total_files)
-                continue
-
-            progress_text.write(f"({idx}/{total_files}) `{uploaded.name}` 처리 중...")
-
-            try:
-                if ext in PDF_EXTS:
-                    file_results = process_pdf_file(
-                        saved_path, uploaded.name, capture_data, zoom,
-                        file_type_label="PDF", progress_text=progress_text,
-                    )
-                elif ext in OFFICE_EXTS:
-                    file_results = process_office_file(
-                        saved_path, uploaded.name, capture_data, zoom,
-                        progress_text=progress_text,
-                    )
-                elif ext in IMAGE_EXTS:
-                    file_results = process_image_file(
-                        saved_path, uploaded.name, capture_data
-                    )
-                else:
-                    file_results = []
-
-                all_results.extend(file_results)
-                processed_pages += len(file_results)
-            except subprocess.TimeoutExpired:
-                failed.append((uploaded.name, "LibreOffice 변환 시간 초과"))
-            except Exception as e:
-                failed.append((uploaded.name, f"{type(e).__name__}: {e}"))
-                # 디버그용 traceback 저장은 하지 않고 계속 진행
-                _ = traceback.format_exc()
-
+        if not os.path.exists(file_path):
+            failed.append((file_name, "파일이 존재하지 않습니다"))
             processed_files += 1
             progress.progress(processed_files / total_files)
-            summary.write(
-                f"처리 완료 파일: **{processed_files}/{total_files}**, "
-                f"비교한 페이지/이미지 수: **{processed_pages}**"
-            )
+            continue
+
+        if ext not in SUPPORTED_CANDIDATE_EXTS:
+            failed.append((file_name, f"지원하지 않는 형식: {ext}"))
+            processed_files += 1
+            progress.progress(processed_files / total_files)
+            continue
+
+        progress_text.write(f"({idx}/{total_files}) `{file_name}` 처리 중...")
+
+        try:
+            if ext in PDF_EXTS:
+                file_results = process_pdf_file(
+                    file_path, file_name, capture_data, zoom,
+                    file_type_label="PDF", progress_text=progress_text,
+                )
+            elif ext in OFFICE_EXTS:
+                file_results = process_office_file(
+                    file_path, file_name, capture_data, zoom,
+                    progress_text=progress_text,
+                )
+            elif ext in IMAGE_EXTS:
+                file_results = process_image_file(
+                    file_path, file_name, capture_data
+                )
+            else:
+                file_results = []
+
+            all_results.extend(file_results)
+            processed_pages += len(file_results)
+        except subprocess.TimeoutExpired:
+            failed.append((file_name, "LibreOffice 변환 시간 초과"))
+        except Exception as e:
+            failed.append((file_name, f"{type(e).__name__}: {e}"))
+            _ = traceback.format_exc()
+
+        processed_files += 1
+        progress.progress(processed_files / total_files)
+        summary.write(
+            f"처리 완료 파일: **{processed_files}/{total_files}**, "
+            f"비교한 페이지/이미지 수: **{processed_pages}**"
+        )
 
     progress_text.empty()
     progress.empty()
