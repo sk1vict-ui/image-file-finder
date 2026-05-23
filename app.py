@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import tempfile
 import traceback
+import zipfile
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
 
@@ -551,32 +552,171 @@ def main() -> None:
         # name -> {"name": str, "bytes": bytes, "size": int, "relpath": str}
         st.session_state.uploaded_candidates = {}
 
-    st.markdown(
-        "💡 **여러 파일을 한 번에 추가하는 방법**\n"
-        "- 파일 선택 창이 열리면 폴더로 이동한 뒤 **Ctrl+A** (Mac은 **⌘+A**) 로 전체 선택, 또는\n"
-        "- 첫 파일 클릭 → 마지막 파일 **Shift+클릭** 으로 범위 선택, 또는\n"
-        "- **Ctrl/⌘+클릭** 으로 원하는 파일만 골라서 선택"
+    tab_files, tab_folder, tab_zip = st.tabs(
+        ["📄 파일로 추가", "📁 폴더 통째로 추가", "🗜️ ZIP으로 추가 (가장 안정적)"]
     )
-    new_files = st.file_uploader(
-        "추가할 파일 선택 (PDF, DOCX, DOC, PPTX, PPT, PNG, JPG, JPEG, WEBP)",
-        type=["pdf", "docx", "doc", "pptx", "ppt", "png", "jpg", "jpeg", "webp"],
-        accept_multiple_files=True,
-        key="files_uploader",
-    )
-    if new_files:
-        added = 0
-        for f in new_files:
-            key = f.name
-            if key not in st.session_state.uploaded_candidates:
-                st.session_state.uploaded_candidates[key] = {
-                    "name": f.name,
-                    "bytes": bytes(f.getbuffer()),
-                    "size": f.size,
-                    "relpath": f.name,
+
+    with tab_files:
+        st.caption(
+            "파일 선택 창에서 **Ctrl+A** (Mac ⌘+A) 전체 선택, "
+            "**Shift+클릭** 범위 선택, **Ctrl/⌘+클릭** 개별 선택 가능"
+        )
+        new_files = st.file_uploader(
+            "파일 선택 (PDF, DOCX, DOC, PPTX, PPT, PNG, JPG, JPEG, WEBP)",
+            type=["pdf", "docx", "doc", "pptx", "ppt", "png", "jpg", "jpeg", "webp"],
+            accept_multiple_files=True,
+            key="files_uploader",
+        )
+        if new_files:
+            added = 0
+            for f in new_files:
+                key = f"file::{f.name}"
+                if key not in st.session_state.uploaded_candidates:
+                    st.session_state.uploaded_candidates[key] = {
+                        "name": f.name,
+                        "bytes": bytes(f.getbuffer()),
+                        "size": f.size,
+                        "relpath": f.name,
+                    }
+                    added += 1
+            if added:
+                st.success(f"{added}개 파일이 추가되었습니다.")
+
+    with tab_folder:
+        st.caption(
+            "📁 버튼을 누르면 OS의 **폴더 선택** 창이 열립니다. "
+            "선택한 폴더 안의 모든 파일(하위 폴더 포함)이 업로더로 자동 전달되어 업로드됩니다. "
+            "Chrome/Edge/Safari 데스크탑에서 작동합니다."
+        )
+        import streamlit.components.v1 as components
+        inject_js = """
+        <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif;">
+          <button id="pick-folder-btn"
+            style="padding:10px 18px;background:#ff4b4b;color:white;border:none;
+                   border-radius:8px;cursor:pointer;font-weight:600;font-size:14px;">
+            📁 폴더 선택해서 모든 파일 업로드
+          </button>
+          <div id="pick-status" style="margin-top:8px;color:#555;font-size:13px;"></div>
+          <script>
+            const btn = document.getElementById('pick-folder-btn');
+            const status = document.getElementById('pick-status');
+            btn.addEventListener('click', () => {
+              try {
+                const parentDoc = window.parent.document;
+                const uploaders = parentDoc.querySelectorAll(
+                  'section[data-testid="stFileUploaderDropzone"] input[type="file"], ' +
+                  'div[data-testid="stFileUploader"] input[type="file"]'
+                );
+                if (!uploaders.length) {
+                  status.textContent = '❌ 페이지의 업로더를 찾지 못했어요. "ZIP으로 추가" 탭을 사용해주세요.';
+                  return;
                 }
-                added += 1
-        if added:
-            st.success(f"{added}개 파일이 추가되었습니다. (위 업로더에서 추가로 또 선택할 수 있습니다)")
+                const target = uploaders[uploaders.length - 1];
+                target.setAttribute('webkitdirectory', '');
+                target.setAttribute('directory', '');
+                target.setAttribute('mozdirectory', '');
+                const cleanup = () => {
+                  target.removeAttribute('webkitdirectory');
+                  target.removeAttribute('directory');
+                  target.removeAttribute('mozdirectory');
+                };
+                target.addEventListener('change', cleanup, { once: true });
+                target.addEventListener('cancel', cleanup, { once: true });
+                target.click();
+                status.textContent = '폴더 선택 창에서 폴더를 고르면 자동 업로드됩니다...';
+              } catch (e) {
+                status.textContent = '❌ 브라우저 보안 정책으로 막혔어요: ' + e.message +
+                  '. "ZIP으로 추가" 탭을 사용해주세요.';
+              }
+            });
+          </script>
+        </div>
+        """
+        components.html(inject_js, height=110)
+
+        folder_files = st.file_uploader(
+            "👆 위 버튼을 누르세요. 폴더 안 모든 파일이 여기에 채워집니다 "
+            "(또는 직접 파일을 드래그&드롭 해도 됩니다).",
+            type=["pdf", "docx", "doc", "pptx", "ppt", "png", "jpg", "jpeg", "webp"],
+            accept_multiple_files=True,
+            key="folder_uploader",
+        )
+        if folder_files:
+            added = 0
+            skipped = 0
+            for f in folder_files:
+                if Path(f.name).suffix.lower() not in SUPPORTED_CANDIDATE_EXTS:
+                    skipped += 1
+                    continue
+                key = f"folder::{f.name}::{f.size}"
+                if key not in st.session_state.uploaded_candidates:
+                    st.session_state.uploaded_candidates[key] = {
+                        "name": f.name,
+                        "bytes": bytes(f.getbuffer()),
+                        "size": f.size,
+                        "relpath": f.name,
+                    }
+                    added += 1
+            msg = f"{added}개 파일이 추가되었습니다."
+            if skipped:
+                msg += f" (지원하지 않는 형식 {skipped}개 건너뜀)"
+            if added or skipped:
+                st.success(msg)
+
+    with tab_zip:
+        st.caption(
+            "폴더를 **ZIP**으로 압축해서 업로드하면 서버에서 자동으로 풀어 "
+            "지원 파일들만 추출합니다. 가장 안정적인 방법입니다.\n\n"
+            "**Windows**: 폴더 우클릭 → 보내기 → 압축(ZIP) 폴더\n"
+            "**Mac**: 폴더 우클릭 → \"...\" 압축"
+        )
+        zip_files = st.file_uploader(
+            "ZIP 파일 선택 (여러 개 가능)",
+            type=["zip"],
+            accept_multiple_files=True,
+            key="zip_uploader",
+        )
+        if zip_files:
+            total_added = 0
+            total_skipped = 0
+            errors = []
+            for zf in zip_files:
+                try:
+                    with zipfile.ZipFile(io.BytesIO(bytes(zf.getbuffer()))) as zip_obj:
+                        for info in zip_obj.infolist():
+                            if info.is_dir():
+                                continue
+                            name = info.filename
+                            try:
+                                name = name.encode("cp437").decode("cp949")
+                            except (UnicodeDecodeError, UnicodeEncodeError):
+                                pass
+                            ext = Path(name).suffix.lower()
+                            if ext not in SUPPORTED_CANDIDATE_EXTS:
+                                total_skipped += 1
+                                continue
+                            file_bytes = zip_obj.read(info)
+                            display_name = Path(name).name
+                            key = f"zip::{zf.name}::{name}"
+                            if key not in st.session_state.uploaded_candidates:
+                                st.session_state.uploaded_candidates[key] = {
+                                    "name": display_name,
+                                    "bytes": file_bytes,
+                                    "size": len(file_bytes),
+                                    "relpath": name,
+                                }
+                                total_added += 1
+                except zipfile.BadZipFile:
+                    errors.append(f"{zf.name}: 손상된 ZIP 파일")
+                except Exception as e:
+                    errors.append(f"{zf.name}: {e}")
+            if total_added or total_skipped:
+                msg = f"ZIP에서 {total_added}개 파일을 추가했습니다."
+                if total_skipped:
+                    msg += f" (지원하지 않는 형식 {total_skipped}개 건너뜀)"
+                st.success(msg)
+            for err in errors:
+                st.error(err)
 
     # 선택된 파일 리스트
     st.markdown(f"**선택된 검색 대상 파일: {len(st.session_state.uploaded_candidates)}개**")
