@@ -539,18 +539,82 @@ def main() -> None:
             st.error(f"캡쳐 이미지를 열 수 없습니다: {e}")
 
     st.divider()
-    st.header("2단계: 원본 후보 파일 업로드")
-    candidate_files = st.file_uploader(
-        "원본 후보 파일을 여러 개 선택하세요 (PDF, DOCX, DOC, PPTX, PPT, PNG, JPG, JPEG, WEBP)",
-        type=["pdf", "docx", "doc", "pptx", "ppt", "png", "jpg", "jpeg", "webp"],
-        accept_multiple_files=True,
-        key="candidates",
+    st.header("2단계: 원본 후보 폴더 경로 입력")
+    st.caption(
+        "검색 대상이 될 폴더 경로를 한 줄에 하나씩 입력하세요. "
+        "여러 폴더를 한꺼번에 입력하면 모든 폴더에서 일괄 검색됩니다."
     )
-    if candidate_files:
-        st.write(f"업로드된 파일: **{len(candidate_files)}개**")
-        with st.expander("파일 목록 보기", expanded=False):
-            for f in candidate_files:
-                st.write(f"- `{f.name}` ({format_size(len(f.getbuffer()))})")
+    paths_text = st.text_area(
+        "폴더 경로 (한 줄에 하나)",
+        value="",
+        height=120,
+        placeholder="/home/runner/workspace/samples\n/data/documents",
+        key="folder_paths",
+    )
+    path_opt_cols = st.columns([1, 1, 2])
+    with path_opt_cols[0]:
+        recursive = st.checkbox("하위 폴더 포함", value=True)
+    with path_opt_cols[1]:
+        max_scan_files = st.number_input(
+            "최대 스캔 파일 수", min_value=10, max_value=10000, value=500, step=50,
+        )
+
+    folder_paths = [p.strip() for p in paths_text.splitlines() if p.strip()]
+    discovered_files: List[str] = []
+    invalid_paths: List[Tuple[str, str]] = []
+
+    if folder_paths:
+        for p in folder_paths:
+            path_obj = Path(p).expanduser()
+            if not path_obj.exists():
+                invalid_paths.append((p, "경로가 존재하지 않습니다"))
+                continue
+            if path_obj.is_file():
+                if path_obj.suffix.lower() in SUPPORTED_CANDIDATE_EXTS:
+                    discovered_files.append(str(path_obj))
+                else:
+                    invalid_paths.append((p, f"지원하지 않는 형식: {path_obj.suffix}"))
+                continue
+            if not path_obj.is_dir():
+                invalid_paths.append((p, "폴더 또는 파일이 아닙니다"))
+                continue
+            iterator = path_obj.rglob("*") if recursive else path_obj.glob("*")
+            for child in iterator:
+                if not child.is_file():
+                    continue
+                if child.suffix.lower() in SUPPORTED_CANDIDATE_EXTS:
+                    discovered_files.append(str(child))
+                if len(discovered_files) >= max_scan_files:
+                    break
+            if len(discovered_files) >= max_scan_files:
+                break
+
+        # 중복 제거 + 정렬
+        seen = set()
+        deduped = []
+        for f in discovered_files:
+            if f not in seen:
+                seen.add(f)
+                deduped.append(f)
+        discovered_files = sorted(deduped)
+
+        st.write(f"검색 대상 파일: **{len(discovered_files)}개**")
+        if len(discovered_files) >= max_scan_files:
+            st.warning(
+                f"최대 스캔 파일 수({max_scan_files})에 도달했습니다. "
+                "더 많은 파일을 검색하려면 위 값을 늘려주세요."
+            )
+        if invalid_paths:
+            for p, reason in invalid_paths:
+                st.error(f"`{p}` — {reason}")
+        if discovered_files:
+            with st.expander("파일 목록 보기", expanded=False):
+                for f in discovered_files:
+                    try:
+                        size = os.path.getsize(f)
+                        st.write(f"- `{f}` ({format_size(size)})")
+                    except OSError:
+                        st.write(f"- `{f}`")
 
     st.divider()
     st.header("검색 옵션")
