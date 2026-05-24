@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "PIhDZKIO9caisu3Uw5e0z"
+uri = "file://MANUAL.md"
+type = "text"
+title = "캡쳐 이미지 원본 파일 찾기 — 사용 매뉴얼"
