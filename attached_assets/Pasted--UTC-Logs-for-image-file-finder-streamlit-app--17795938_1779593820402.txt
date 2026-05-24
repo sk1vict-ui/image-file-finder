@@ -1,0 +1,136 @@
+[     UTC     ] Logs for image-file-finder.streamlit.app/
+
+────────────────────────────────────────────────────────────────────────────────────────
+
+[03:35:51] 🖥 Provisioning machine...
+
+[03:35:51] 🎛 Preparing system...
+
+[03:35:51] ⛓ Spinning up manager process...
+
+[03:35:50] 🚀 Starting up repository: 'image-file-finder', branch: 'main', main module: 'app.py'
+
+[03:35:50] 🐙 Cloning repository...
+
+[03:35:50] 🐙 Cloning into '/mount/src/image-file-finder'...
+
+[03:35:50] 🐙 Cloned repository!
+
+[03:35:50] 🐙 Pulling code changes from Github...
+
+[03:35:51] 📦 Processing dependencies...
+
+Prepared 47 packages in 3.15s
+
+Installed 47 packages in 208ms
+
+ + altair==6.1.0
+
+ + anyio==4.13.0
+
+ + attrs==26.1.0
+
+ + blinker==1.9.0
+
+ + cachetools==7.1.1
+
+ + certifi==2026.4.22
+
+ + charset-normalizer==3.4.7
+
+ + click==8.3.3
+
+ + gitdb==4.0.12[2026-05-24 03:35:54.899329] 
+
+ + gitpython==3.1.50
+
+ + h11==0.16.0
+
+ + httptools==0.7.1
+
+ + idna==3.13
+
+ + imagehash==4.3.2
+
+ + itsdangerous==2.2.0
+
+ + jinja2==[2026-05-24 03:35:54.899622] 3.1.6
+
+ + jsonschema==4.26.0
+
+ + jsonschema-specifications==2025.9.1
+
+ + markupsafe==3.0.3
+
+ + narwhals==2.21.0
+
+ + numpy[2026-05-24 03:35:54.899832] ==2.4.4
+
+ + opencv-python-headless==4.13.0.92
+
+ + packaging==26.2
+
+ [2026-05-24 03:35:54.900103] + pandas==3.0.2
+
+ + pillow==12.2.0
+
+ + protobuf==7.34.1
+
+ + pyarrow==24.0.0[2026-05-24 03:35:54.900277] 
+
+ + pydeck==0.9.2
+
+ + pymupdf==1.27.2.3
+
+ + python-dateutil==2.9.0.post0
+
+ + python-multipart==[2026-05-24 03:35:54.900411] 0.0.27
+
+ + pywavelets==1.9.0
+
+ + referencing==0.37.0
+
+ + requests==2.33.1
+
+ + rpds-py==0.30.0
+
+ +[2026-05-24 03:35:54.900557]  scipy==1.17.1
+
+ + six==1.17.0
+
+ + smmap==5.0.3
+
+ + starlette==1.0.0
+
+ + [2026-05-24 03:35:54.900659] streamlit==1.57.0
+
+ + tenacity==9.1.4
+
+ + toml==0.10.2
+
+ + typing-extensions==4.15.0
+
+ + [2026-05-24 03:35:54.900766] urllib3==2.7.0
+
+ + uvicorn==0.46.0
+
+ + watchdog==6.0.0
+
+ + websockets==16.0
+
+[03:35:55] 🐍 Python dependencies were installed from /mount/src/image-file-finder/uv.lock using uv-sync.
+
+[03:35:55] 📦 WARN: More than one requirements file detected in the repository. Available options: uv-sync /mount/src/image-file-finder/uv.lock, uv /mount/src/image-file-finder/requirements.txt, poetry /mount/src/image-file-finder/pyproject.toml. Used: uv-sync with /mount/src/image-file-finder/uv.lock
+
+Check if streamlit is installed
+
+Streamlit is already installed
+
+[03:35:57] 📦 Processed dependencies!
+
+2026-05-24 03:35:59.586 Uvicorn server started on 0.0.0.0:5000
+
+
+
+
+[03:36:00] ❗️ The service has encountered an error while checking the health of the Streamlit app: Get "http://localhost:8501/healthz": dial tcp 127.0.0.1:8501: connect: connection refused
