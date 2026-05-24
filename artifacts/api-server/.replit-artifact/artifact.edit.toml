@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "캡쳐 이미지 원본 파일 찾기"
+version = "1.0.0"
+id = "3B4_FFSkEVBkAeYMFRJ2e"
+
+[[services]]
+localPort = 8080
+name = "Streamlit App"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/api-server run dev"
+
+[services.production]
+
+[services.production.build]
+args = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
+
+[services.production.run]
+args = ["pnpm", "--filter", "@workspace/api-server", "run", "start"]
+
+[services.production.run.env]
+PORT = "8080"
+
+[services.production.health.startup]
+path = "/_stcore/health"
