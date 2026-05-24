@@ -22,3 +22,6 @@ args = ["pnpm", "--filter", "@workspace/api-server", "run", "start"]
 
 [services.production.run.env]
 PORT = "8080"
+
+[services.production.health.startup]
+path = "/_stcore/health"
