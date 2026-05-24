@@ -602,11 +602,23 @@ def render_result_card(rank: int, result: Dict[str, Any]) -> None:
 
 
 def main() -> None:
+    # 사이드바: 매뉴얼 링크
+    with st.sidebar:
+        st.markdown("### 📘 도움말")
+        st.page_link(
+            "pages/1_📖_사용_매뉴얼.py",
+            label="사용 매뉴얼 보기",
+            icon="📖",
+        )
+        st.caption("처음 사용하시나요? 매뉴얼을 먼저 확인해보세요.")
+        st.divider()
+
     st.title("캡쳐 이미지 원본 파일 찾기")
     st.write(
         "캡쳐 이미지를 업로드한 뒤, 원본 후보 파일을 여러 개 업로드하면 "
         "가장 유사한 원본 파일과 페이지를 찾아줍니다."
     )
+    st.info("👈 처음이신가요? 왼쪽 사이드바에서 **📖 사용 매뉴얼**을 확인하세요.", icon="💡")
 
     # 환경 상태 배너 (포터블 모드 안내)
     soffice_path = find_libreoffice()
